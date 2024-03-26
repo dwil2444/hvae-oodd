@@ -119,6 +119,7 @@ def test(epoch, dataloader, evaluator, dataset_name="test", max_test_examples=fl
     x = x.to(device)
     n = min(x.size(0), 8)
     likelihood_data, stage_datas = model(x, n_posterior_samples=args.test_samples)
+    LOGGER.info(likelihood_data.likelihood.shape)
     p_x_mean = likelihood_data.mean[: args.batch_size].view(args.batch_size, *in_shape)  # Reshape zeroth "sample"
     p_x_samples = likelihood_data.samples[: args.batch_size].view(args.batch_size, *in_shape)  # Reshape zeroth "sample"
     comparison = torch.cat([x[:n], p_x_mean[:n], p_x_samples[:n]])
@@ -246,20 +247,30 @@ def compute_roc_pr_metrics(y_true, y_score, classes, reference_class):
     return roc_results, pr_results
 
 
+# def subsample_labels_and_scores(y_true, y_score, n_examples):
+#     """Subsample y_true and y_score to have n_examples while maintaining their relative ordering"""
+#     assert len(y_true) == len(y_score) >= n_examples, f"Got {len(y_true)=}, {len(y_score)=}, {n_examples=}"
+#     LOGGER.info(set(y_true))
+#     indices = [np.random.choice(np.where(y_true == i)[0], n_examples, replace=False) for i in set(y_true)]
+#     y_true = np.concatenate([y_true[idx] for idx in indices])
+#     y_score = np.concatenate([y_score[idx] for idx in indices])
+#     return y_true, y_score
 def subsample_labels_and_scores(y_true, y_score, n_examples):
     """Subsample y_true and y_score to have n_examples while maintaining their relative ordering"""
     assert len(y_true) == len(y_score) >= n_examples, f"Got {len(y_true)=}, {len(y_score)=}, {n_examples=}"
-    indices = [np.random.choice(np.where(y_true == i)[0], n_examples, replace=False) for i in set(y_true)]
-    y_true = np.concatenate([y_true[idx] for idx in indices])
-    y_score = np.concatenate([y_score[idx] for idx in indices])
+    indices_per_class = [np.where(y_true == i)[0] for i in np.unique(y_true)]
+    sampled_indices = [np.random.choice(indices, min(n_examples, len(indices)), replace=False)
+                       for indices in indices_per_class]
+    sampled_indices = np.concatenate(sampled_indices)
+    y_true = y_true[sampled_indices]
+    y_score = y_score[sampled_indices]
     return y_true, y_score
-
 
 if __name__ == "__main__":
     # Data
     datamodule = oodd.datasets.DataModule(
         batch_size=args.batch_size,
-        test_batch_size=250,
+        test_batch_size=args.batch_size,
         data_workers=args.data_workers,
         train_datasets=args.train_datasets,
         val_datasets=args.val_datasets,
@@ -361,7 +372,7 @@ if __name__ == "__main__":
                 [len(d) for d in datamodule.val_datasets.values()]
             )  # Maximum number of examples to use for equal sized sets
 
-            # L >k
+            # L > k
             for n_skipped_latents in range(model.n_latents):
                 y_true, y_score, classes = test_evaluator.get_classes_and_scores_per_source(
                     f"skip-elbo", f"{n_skipped_latents} log p(x)"
@@ -382,7 +393,7 @@ if __name__ == "__main__":
                         metrics={f"ROC AUC L>{n_skipped_latents} {ood_target}": [value_dict["roc_auc"]]},
                     )
 
-            # LLR >0 >k
+            # LLR > 0 >k
             for n_skipped_latents in range(1, model.n_latents):
                 y_true, y_score, classes = test_evaluator.get_classes_and_scores_per_source(
                     f"LLR", f"LLR>{n_skipped_latents}"

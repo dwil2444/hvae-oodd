@@ -239,7 +239,7 @@ class DeepVAE(BaseModule):
         :return: {'x_': reconstruction logits, 'kl': kl for each stage, **auxiliary}
         """
         x = x.repeat(n_posterior_samples, *((1,) * (x.ndim - 1)))  # Posterior samples
-
+        # IWAE samples: L
         if self.lambda_init is not None:
             x = self.lambda_init(x)
 

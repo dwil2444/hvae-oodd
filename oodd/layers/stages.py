@@ -259,12 +259,15 @@ class VaeStage(StageModule):
         """
         x = io.x
         aux = [io.aux] * len(self.q_deterministic) if self._skip_stochastic else None
-
+        # pass the input data through the deterministic modules to
+        # obtain the hidden representations
         h, _ = self.q_deterministic(x, aux)
 
         z, q_data = self.stochastic.infer(h, **stochastic_kwargs)
+        # return the latent variable
+        # and the variational parameters
         z = self.q_projection(z)
-
+        # project the latent to the desired shape
         io = VaeStage.IO(x=z, aux=h)
         return io, q_data
 
@@ -280,12 +283,14 @@ class VaeStage(StageModule):
         :param stochastic_kwargs: additional parameters passed to the 'StochasticModule'
         :return: (dict('d' : d, 'aux : [aux]), dict('kl': [kl], **auxiliary) )
         """
+        # take as input the output from the previous stage
         d = io.d
         aux = io.aux if self._skip_stochastic else None
-
+        # optional auxiliary variable
         # sample p(z | d)
         z_p, p_data = self.stochastic.generate(d, sample=posterior is None or decode_from_p, **stochastic_kwargs)
-
+        # use the stochastic module to generate
+        # the latent from the hidden representation
         # sample from p if q is not available or forced, otherwise from q and compute KL
         if posterior is None or decode_from_p:
             z = z_p
@@ -296,7 +301,7 @@ class VaeStage(StageModule):
 
         # project z
         z = self.p_projection(z)
-
+        # project the latent to the desired shape
         # pass through deterministic blocks
         d, aux = self.p_deterministic(z, aux=aux)
 
